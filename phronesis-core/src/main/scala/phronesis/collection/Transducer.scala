@@ -160,15 +160,15 @@ object TransducerTypes {
 trait TransducerInstances0 extends TransducerInstances1{
   import TransducerTypes._
 
-  implicit val transducerBifunctor: Bifunctor[Transducer] = new Bifunctor[Transducer] {
-    def bimap[A, B, C, D](fab: Transducer[A, B])(f: A => C, g: B => D): Transducer[C, D] = {
-      val fa = new MapTransducer(f)
-      val fb = new MapTransducer(g)
-      val fc = new IdentityTransducer[C]
-      fa.andThen(fc)
-
-    }
-  }
+//  implicit val transducerBifunctor: Bifunctor[Transducer] = new Bifunctor[Transducer] {
+//    def bimap[A, B, C, D](fab: Transducer[A, B])(f: A => C, g: B => D): Transducer[C, D] = {
+//      val fa = new MapTransducer(f)
+//      val fb = new MapTransducer(g)
+//      val fc = new IdentityTransducer[C]
+//      fa.andThen(fc)
+//
+//    }
+//  }
 }
 
 trait TransducerInstances1 {

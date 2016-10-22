@@ -16,10 +16,7 @@ abstract class ViewOps[B] {
 
   def transducer: Transducer[A, B]
 
-  def hasNext: Boolean = transducer match {
-    case x: IdentityTransducer[_] => false
-    case _ => true
-  }
+  def hasNext: Boolean = transducer.isInstanceOf[IdentityTransducer[_]]
 
   def andThen[C](t: Transducer[B, C]): ViewOps[C] =
     new Link(source, transducer andThen t)

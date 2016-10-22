@@ -69,7 +69,7 @@ class ArraySeq[@sp A](private[collection] val elems: Array[A]) {
 
 }
 
-object ArraySeq extends ArraySeqInstances {
+object ArraySeq {
   def apply[@sp A: ClassTag](as: A*): ArraySeq[A] = {
     val result = implicitly[ClassTag[A]].newArray(as.length)
     as.copyToArray(result)
@@ -80,79 +80,110 @@ object ArraySeq extends ArraySeqInstances {
 
 }
 
-private[phronesis] trait ArraySeqInstances extends ArraySeqInstancesForCats
+//private[phronesis] trait ArraySeqInstances extends ArraySeqInstancesForCats
 
-private[phronesis] sealed trait ArraySeqInstancesForCats {
-  implicit val arraySeqInstances: TraverseFilter[ArraySeq] with MonadCombine[ArraySeq] with CoflatMap[ArraySeq] =
-    new TraverseFilter[ArraySeq] with MonadCombine[ArraySeq] with CoflatMap[ArraySeq] {
-      def empty[A]: ArraySeq[A] = ArraySeq.empty[A]
-
-      def combineK[A](x: ArraySeq[A], y: ArraySeq[A]): ArraySeq[A] = x ++ y
-
-      def pure[A](x: A): ArraySeq[A] = ArraySeq(x)
-
-      override def map[A, B](fa: ArraySeq[A])(f: A => B): ArraySeq[B] =
-        fa map f
-
-      def flatMap[A, B](fa: ArraySeq[A])(f: A => ArraySeq[B]): ArraySeq[B] =
-        fa flatMap f
-
-      override def map2[A, B, Z](fa: ArraySeq[A], fb: ArraySeq[B])(f: (A, B) => Z): ArraySeq[Z] =
-        fa.flatMap(a => fb.map(b => f(a, b)))
-
-      def coflatMap[A, B](fa: ArraySeq[A])(f: ArraySeq[A] => B): ArraySeq[B] = {
-        @tailrec def loop(builder: mutable.ArrayBuilder[B], as: ArraySeq[A]): ArraySeq[B] =
-          as match {
-            case _ +: rest => loop(builder += f(as), rest)
-            case _ => new ArraySeq(builder.result())
-          }
-        loop(mutable.ArrayBuilder.make[B], fa)
-      }
-
-      def foldLeft[A, B](fa: ArraySeq[A], b: B)(f: (B, A) => B): B = fa.elems.foldLeft[B](b)(f)
-
-      def foldRight[A, B](fa: ArraySeq[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]) = {
-        def loop(i: Int): Eval[B] =
-          if (i < fa.length) f(fa.elems(i), Eval.defer(loop(i + 1))) else lb
-        Eval.defer(loop(0))
-      }
-
-      def traverseFilter[G[_], A, B](fa: ArraySeq[A])(f: A => G[Option[B]])(implicit G: Applicative[G]): G[ArraySeq[B]] =
-        foldRight[A, G[ArraySeq[B]]](fa, Always(G.pure(ArraySeq.empty))) { (a, lg) =>
-          G.map2Eval(f(a), lg)((ob, as) => ob.fold(as)(_ +: as))
-        }.value
-
-      def tailRecM[A, B](a: A)(fn: A => ArraySeq[Either[A, B]]): ArraySeq[B] = {
-        val buf = mutable.ArrayBuilder.make[B]
-        var state = List(fn(a).elems.iterator)
-        @tailrec def loop(): Unit = state match {
-          case Nil => ()
-          case h :: tail if h.isEmpty =>
-            state = tail
-            loop()
-          case h :: tail =>
-            h.next match {
-              case Right(b) =>
-                buf += b
-                loop()
-              case Left(a1) =>
-                state = fn(a).elems.iterator :: h :: tail
-                loop()
-            }
-        }
-        loop()
-        new ArraySeq(buf.result())
-      }
-
-      override def size[A](fa: ArraySeq[A]): Long = fa.length.toLong
-
-      override def isEmpty[A](fa: ArraySeq[A]): Boolean = fa.isEmpty
-
-    }
-
-  implicit def arraySeqShow[A: Show]: Show[ArraySeq[A]] = new Show[ArraySeq[A]] {
-    def show(fa: ArraySeq[A]): String =
-      fa.elems.mkString("ArraySeq(", ", ", ")")
-  }
-}
-
+//private[phronesis] sealed trait ArraySeqInstancesForCats {
+//  implicit val arraySeqTraverseFilter: TraverseFilter[ArraySeq] =
+//    new TraverseFilter[ArraySeq] {
+//      def foldLeft[A, B](fa: ArraySeq[A], b: B)(f: (B, A) => B): B = fa.elems.foldLeft[B](b)(f)
+//
+//      def foldRight[A, B](fa: ArraySeq[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]) = {
+//        def loop(i: Int): Eval[B] =
+//          if (i < fa.length) f(fa.elems(i), Eval.defer(loop(i + 1))) else lb
+//        Eval.defer(loop(0))
+//      }
+//
+//      def traverseFilter[G[_], A, B](fa: ArraySeq[A])(f: A => G[Option[B]])(implicit G: Applicative[G]): G[ArraySeq[B]] =
+//        foldRight[A, G[ArraySeq[B]]](fa, Always(G.pure(ArraySeq.empty))) { (a, lg) =>
+//          G.map2Eval(f(a), lg)((ob, as) => ob.fold(as)(_ +: as))
+//        }.value
+//    }
+//
+//  implicit def arraySeqMonadCombine[A: ClassTag]: MonadCombine[ArraySeq] =
+//    new MonadCombine[ArraySeq] {
+//      override def combineK(x: ArraySeq[A], y: ArraySeq[A]): ArraySeq[A] = x ++ y
+//
+//      override def empty: ArraySeq[A] = ArraySeq.empty[A]
+//
+//      override def flatMap[@sp B: ClassTag](fa: ArraySeq[A])(f: A => ArraySeq[B]): ArraySeq[B] =
+//        fa flatMap f
+//
+//      override def pure(x: A): ArraySeq[A] = ArraySeq(x)
+//
+//      override def tailRecM[@sp B: ClassTag](a: A)(fn: A => ArraySeq[Either[A, B]]): ArraySeq[B] = {
+//        val buf = mutable.ArrayBuilder.make[B]
+//        var state = List(fn(a).elems.iterator)
+//        @tailrec def loop(): Unit = state match {
+//          case Nil => ()
+//          case h :: tail if h.isEmpty =>
+//            state = tail
+//            loop()
+//          case h :: tail =>
+//            h.next match {
+//              case Right(b) =>
+//                buf += b
+//                loop()
+//              case Left(a1) =>
+//                state = fn(a).elems.iterator :: h :: tail
+//                loop()
+//            }
+//        }
+//        loop()
+//        new ArraySeq(buf.result())
+//      }
+//    }
+//
+//  implicit val arraySeqCoflatMap: CoflatMap[ArraySeq] =
+//    new CoflatMap[ArraySeq] {
+//      def coflatMap[A, B](fa: ArraySeq[A])(f: ArraySeq[A] => B): ArraySeq[B] = {
+//        @tailrec def loop(builder: mutable.ArrayBuilder[B], as: ArraySeq[A]): ArraySeq[B] =
+//          as match {
+//            case _ +: rest => loop(builder += f(as), rest)
+//            case _ => new ArraySeq(builder.result())
+//          }
+//        loop(mutable.ArrayBuilder.make[B], fa)
+//      }
+//
+//      def map[A, B](fa: ArraySeq[A])(f: A => B): ArraySeq[B] =
+//        fa map f
+//    }
+//
+//  implicit def arraySeqShow[A: Show]: Show[ArraySeq[A]] = new Show[ArraySeq[A]] {
+//    def show(fa: ArraySeq[A]): String =
+//      fa.elems.mkString("ArraySeq(", ", ", ")")
+//  }
+//}
+//
+//class ArraySeqMonadCombine[@sp A](implicit ct: ClassTag[A]) extends MonadCombine[ArraySeq[A]] {
+//  def combineK(x: ArraySeq[A], y: ArraySeq[A]): ArraySeq[A] = x ++ y
+//
+//  def empty: ArraySeq[A] = ArraySeq.empty[A]
+//
+//  def flatMap[@sp B: ClassTag](fa: ArraySeq[A])(f: A => ArraySeq[B]): ArraySeq[B] =
+//    fa flatMap f
+//
+//  def pure(x: A): ArraySeq[A] = ArraySeq(x)
+//
+//  def tailRecM[@sp B: ClassTag](a: A)(fn: A => ArraySeq[Either[A, B]]): ArraySeq[B] = {
+//    val buf = mutable.ArrayBuilder.make[B]
+//    var state = List(fn(a).elems.iterator)
+//    @tailrec def loop(): Unit = state match {
+//      case Nil => ()
+//      case h :: tail if h.isEmpty =>
+//        state = tail
+//        loop()
+//      case h :: tail =>
+//        h.next match {
+//          case Right(b) =>
+//            buf += b
+//            loop()
+//          case Left(a1) =>
+//            state = fn(a).elems.iterator :: h :: tail
+//            loop()
+//        }
+//    }
+//    loop()
+//    new ArraySeq(buf.result())
+//  }
+//}
+//

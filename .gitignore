@@ -68,3 +68,10 @@ project/plugins/project/
 .worksheet
 /.idea/
 /src/
+phronesis-core/project/
+phronesis-core/src/main/java/
+phronesis-core/src/main/resources/
+phronesis-core/src/main/scala-2.11/
+phronesis-core/src/main/scala/phronesis/collection/parallel/
+phronesis-core/src/test/
+project/project/

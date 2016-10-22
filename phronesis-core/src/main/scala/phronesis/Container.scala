@@ -17,7 +17,6 @@ object Container extends ContainerInstances {
 
   def extract[A]: Cokleisli[Container, A, A] =
     Cokleisli[Container, A, A](_.extract)
-
 }
 
 abstract sealed class ContainerInstances {

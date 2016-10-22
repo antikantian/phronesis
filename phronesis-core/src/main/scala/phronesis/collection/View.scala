@@ -7,6 +7,8 @@ import scala.collection.generic.CanBuildFrom
 import scala.collection.mutable.ListBuffer
 import scala.language.implicitConversions
 
+import cats.Eval
+
 /** Adapted from: https://gist.github.com/odersky/6b7c0eb4731058803dfd */
 abstract class View[B] { self =>
   import TransducerTypes._
@@ -27,9 +29,11 @@ abstract class View[B] { self =>
     if (xs.isEmpty || done(r)) r
     else combineLeft(xs.tail, f(r, xs.head), f, done)
 
-  private def combineRight[R](xs: Seq[A], r: R, f: (A, => R) => R): R =
-    if (xs.isEmpty) r
-    else f(xs.head, combineRight(xs.tail, r, f))
+  private def combineRight[C](xs: Seq[A], lc: Eval[C], f: (A, Eval[C]) => Eval[C]): Eval[C] = {
+    def loop(i: Int): Eval[C] =
+      if (i < xs.length) f(xs(i), Eval.defer(loop(i + 1))) else lc
+    Eval.defer(loop(0))
+  }
 
   def foldLeft[C](c: C)(f: (C, B) => C): C = {
     val trans = transducer.fresh
@@ -41,9 +45,9 @@ abstract class View[B] { self =>
     combineLeft[C](source, c, trans.left(f), c => done(c) || trans.done)
   }
 
-  def foldRight[C](c: => C)(f: (B, => C) => C): C = {
+  def foldRight[C](lc: Eval[C])(f: (B, Eval[C]) => Eval[C]): Eval[C] = {
     val trans = transducer.fresh
-    combineRight(source, c, trans.right(f))
+    combineRight(source, lc, trans.right(f))
   }
 
   // view -> view
@@ -51,7 +55,7 @@ abstract class View[B] { self =>
 
   def filter(p: B => Boolean): View[B] = andThen(new FilterTransducer(p))
 
-  def flatMap[C](f: B => View[C]): View[C] = andThen(new FlatMapTransducer(f))
+  def flatMap[C](f: B => Seq[C]): View[C] = andThen(new FlatMapTransducer(f))
 
   def slice(from: Int, end: Int): View[B] = andThen(new SliceTransducer(from, end))
 
@@ -79,7 +83,9 @@ abstract class View[B] { self =>
 
   def toList: List[B] = foldLeft(new ListBuffer[B])(_ += _).toList
 
-  def toStream: Stream[B] = foldRight(Stream.Empty: Stream[B])(_ #:: _)
+  def toStream: Stream[B] = foldRight(Eval.now(Stream.Empty: Stream[B])) { (elem, acc) =>
+    acc.map(s => elem #:: s)
+  }.value
 
   override def toString = s"View(${toList mkString ", "})"
 
