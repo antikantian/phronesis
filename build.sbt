@@ -7,6 +7,7 @@ lazy val versions = new {
   val fs2 = "0.9.0-RC2"
   val fs2Cats = "0.1.0-RC2"
   val imp = "0.2.1"
+  val monocle = "1.3.1"
   val paradise = "2.1.0"
   val scalacheck = "1.13.2"
   val scalameter = "0.7"
@@ -33,6 +34,16 @@ lazy val datastructs = Seq(
 lazy val mathlibs = Seq(
   "org.spire-math"         %% "spire"            % versions.spire
 )
+
+lazy val monocle = Seq(
+  "com.github.julien-truffaut"  %%  "monocle-core"    % versions.monocle,
+  "com.github.julien-truffaut"  %%  "monocle-generic" % versions.monocle,
+  "com.github.julien-truffaut"  %%  "monocle-macro"   % versions.monocle,
+  "com.github.julien-truffaut"  %%  "monocle-state"   % versions.monocle,
+  "com.github.julien-truffaut"  %%  "monocle-refined" % versions.monocle,
+  "com.github.julien-truffaut"  %%  "monocle-unsafe"  % versions.monocle,
+  "com.github.julien-truffaut"  %%  "monocle-law"     % versions.monocle % "test"
+                      )
 
 lazy val streamlibs = Seq(
   "co.fs2"                 %% "fs2-core"      % versions.fs2,
@@ -98,6 +109,6 @@ def module(name: String) = {
 }
 
 lazy val phronesisCore = module("core").settings(
-  libraryDependencies ++= (functionalibs ++ datastructs ++ mathlibs ++ streamlibs ++ testlibs),
+  libraryDependencies ++= (functionalibs ++ datastructs ++ mathlibs ++ monocle ++ streamlibs ++ testlibs),
   addCompilerPlugin("org.scalamacros" % "paradise" % versions.paradise cross CrossVersion.full)
 )

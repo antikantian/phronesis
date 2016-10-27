@@ -1,190 +1,59 @@
 package phronesis
 package collection
 
-import cats.arrow._
-import cats.data._
-import cats.functor._
+import cats.Monoid
 
-abstract class Transducer[-A, +B] { self =>
-  def left[C](r: LeftFold[B, C]): LeftFold[A, C]
+trait Transducer[+A, -B] { self =>
 
-  def right[C](t: RightFold[B, C]): RightFold[A, C]
+  def apply[S](rf: Reducer[A, S]): Reducer[B, S]
 
-  class Syllogism[C](that: Transducer[B, C]) extends Transducer[A, C] {
-    def left[D](s: LeftFold[C, D]): LeftFold[A, D] = self.left(that.left(s))
-    def right[D](s: RightFold[C, D]): RightFold[A, D] = self.right(that.right(s))
+  def andThen[C](that: Transducer[B, C]): Transducer[A, C] =
+    that compose this
 
-    override def fresh: Transducer[A, C] = {
-      val self1 = self.fresh
-      val that1 = that.fresh
-      if ((self1 == self) && (that1 == that)) this
-      else self1 andThen that1
+  def combine[C](that: Transducer[B, C]): Transducer[A, C] =
+    new Transducer[A, C] {
+      def apply[S](rf: Reducer[A, S]): Reducer[C, S] =
+        that(self(rf))
     }
-  }
 
-  def andThen[C](that: Transducer[B, C]): Transducer[A, C] = {
-    if (canAbort || that.canAbort)
-      new Syllogism[C](that) {
-        override def canAbort = true
+  def compose[C](that: Transducer[C, A]): Transducer[C, B] =
+    new Transducer[C, B] {
+      def apply[S](rf: Reducer[C, S]) = self(that(rf))
+    }
 
-        override def done = self.done || that.done
-      }
-    else
-      new Syllogism[C](that)
-  }
-
-  @inline final def >>[C](that: Transducer[B, C]): Transducer[A, C] = andThen(that)
-
-  def fresh: Transducer[A, B] = this
-
-  def canAbort: Boolean = false
-
-  def done: Boolean = false
+  def transform[S](rf: Reducer[A, S]): Reducer[B, S] = self(rf)
 }
 
 object Transducer {
+  def apply[A, B](f: A => B) =
+    new Transducer[B, A] {
+      def apply[S](rf: Reducer[B, S]): Reducer[A, S] = (s, a) => rf(s, f(a))
+    }
 
+  def filter[A](p: A => Boolean): Transducer[A, A] =
+    new Transducer[A, A] {
+      def apply[S](rf: Reducer[A, S]): Reducer[A, S] =
+        (s, a) => if (p(a)) rf(s, a) else s
+    }
+
+  def map[A, B](f: B => A): Transducer[A, B] =
+    new Transducer[A, B] {
+      def apply[S](rf: Reducer[A, S]): Reducer[B, S] =
+        (s, b) => rf(s, f(b))
+    }
+
+  // TODO: Replace with comonadic skip/halt instead of throwing exception?
+  private[phronesis] object Skip extends Exception with scala.util.control.NoStackTrace
+  private[phronesis] object Halt extends Exception with scala.util.control.NoStackTrace
 }
 
-object TransducerTypes {
+private[phronesis] object Transducers {
 
-  abstract class CountingTransducer[A, B] extends Transducer[A, B] with Cloneable {
-    var count = 0
-    override def fresh = {
-      val result = clone.asInstanceOf[CountingTransducer[A, B]]
-      result.count = 0
-      result
-    }
-  }
-
-  class IdentityTransducer[A] extends Transducer[A, A] {
-    def left[C](r: LeftFold[A, C]) = { (acc, elem) =>
-      r(acc, elem)
-    }
-
-    def right[C](r: RightFold[A, C]) = { (elem, acc) =>
-      r(elem, acc)
-    }
-  }
-
-  class FilterTransducer[A](p: A => Boolean) extends Transducer[A, A] {
-    def left[C](r: LeftFold[A, C]): LeftFold[A, C] =
-      (acc: C, elem: A) => if (p(elem)) r(acc, elem) else acc
-
-    def right[C](r: RightFold[A, C]): RightFold[A, C] =
-      (elem, acc) => if (p(elem)) r(elem, acc) else acc
-  }
-
-  class FlatMapTransducer[A, B](f: A => Seq[B]) extends Transducer[A, B] {
-    def left[C](r: LeftFold[B, C]): LeftFold[A, C] =
-      (acc, elem) => f(elem).foldLeft(acc)(r)
-
-    def right[C](r: RightFold[B, C]): RightFold[A, C] =
-      (elem, acc) => f(elem).foldRight(acc)(r)
-  }
-
-  class MapTransducer[A, B](f: A => B) extends Transducer[A, B] {
-    def left[C](r: LeftFold[B, C]): LeftFold[A, C] =
-      (acc, elem) => r(acc, f(elem))
-
-    def right[C](r: RightFold[B, C]): RightFold[A, C] =
-      (elem, acc) => r(f(elem), acc)
-  }
-
-  class SliceTransducer[A](start: Int, end: Int) extends CountingTransducer[A, A] {
-    def left[C](r: LeftFold[A, C]): LeftFold[A, C] = { (acc, elem) =>
-      if (count >= end) acc
-      else {
-        count += 1
-        if (count < start) acc
-        else r(acc, elem)
-      }
-    }
-
-    def right[C](r: RightFold[A, C]): RightFold[A, C] = { (elem, acc) =>
-      if (count >= end) acc
-      else {
-        count += 1
-        if (count < start) acc
-        else r(elem, acc)
-      }
-    }
-    override def canAbort = true
-    override def done = count >= end
-  }
-
-  class TakeWhileTransducer[A](p: A => Boolean) extends CountingTransducer[A, A] {
-    def left[C](r: LeftFold[A, C]): LeftFold[A, C] = { (acc, elem) =>
-      count = if (count >= 0 && !p(elem)) -(count + 1) else count + 1
-      if (count >= 0) r(acc, elem)
-      else acc
-    }
-
-    def right[C](r: RightFold[A, C]): RightFold[A, C] = { (elem, acc) =>
-      count = if (count >= 0 && !p(elem)) -(count + 1) else count + 1
-      if (count >= 0) r(elem, acc)
-      else acc
-    }
-    override def canAbort = true
-    override def done = count < 0
-  }
-
-  class DropWhileTransducer[A](p: A => Boolean) extends CountingTransducer[A, A] {
-    def left[C](r: LeftFold[A, C]): LeftFold[A, C] = { (acc, elem) =>
-      count = if (count >= 0 && !p(elem)) -(count + 1) else count + 1
-      if (count < 0) r(acc, elem)
-      else acc
-    }
-
-    def right[C](r: RightFold[A, C]): RightFold[A, C] = { (elem, acc) =>
-      count = if (count >= 0 && !p(elem)) -(count + 1) else count + 1
-      if (count > 0) r(elem, acc)
-      else acc
-    }
-  }
-
-  class ZipWithIndex[A]() extends CountingTransducer[A, (A, Int)] {
-    def left[C](r: LeftFold[(A, Int), C]): LeftFold[A, C] = { (acc, elem) =>
-      count += 1
-      r(acc, (elem, count - 1))
-    }
-
-    def right[C](r: RightFold[(A, Int), C]): RightFold[A, C] = { (elem, acc) =>
-      count += 1
-      r((elem, count - 1), acc)
-    }
+  final class CombineTransducer[A, B, C](left: Transducer[A, B], right: Transducer[B, C]) extends Transducer[A, C] {
+    def apply[S](rf: Reducer[A, S]): Reducer[C, S] =
+      right(left(rf))
   }
 
 }
-
-trait TransducerInstances0 extends TransducerInstances1{
-  import TransducerTypes._
-
-//  implicit val transducerBifunctor: Bifunctor[Transducer] = new Bifunctor[Transducer] {
-//    def bimap[A, B, C, D](fab: Transducer[A, B])(f: A => C, g: B => D): Transducer[C, D] = {
-//      val fa = new MapTransducer(f)
-//      val fb = new MapTransducer(g)
-//      val fc = new IdentityTransducer[C]
-//      fa.andThen(fc)
-//
-//    }
-//  }
-}
-
-trait TransducerInstances1 {
-  import TransducerTypes._
-
-  implicit val transducerCategory: Category[Transducer] = new Category[Transducer] {
-    def compose[A, B, C](f: Transducer[B, C], g: Transducer[A, B]): Transducer[A, C] =
-      g andThen f
-
-    def id[A]: Transducer[A, A] = new IdentityTransducer[A]
-  }
-}
-
-
-
-
-
 
 

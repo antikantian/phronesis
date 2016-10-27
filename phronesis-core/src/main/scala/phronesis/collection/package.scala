@@ -1,9 +1,8 @@
 package phronesis
 
-import cats.Eval
+import cats.data.State
 
 package object collection {
-  type LeftFold[-A, C] = (C, A) => C
-
-  type RightFold[-A, C] = (A, Eval[C]) => Eval[C]
+  type Endo[A] = (A) => A
+  type Reducer[-A, S] = (S, A) => S
 }
